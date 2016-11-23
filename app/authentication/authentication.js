@@ -1,4 +1,8 @@
+var config = require('../../config');
+var appConfig = config.application;
+var database = config.database();
 var User = require('../models/users').init();
+var SyncedStores = require('../models/syncedStores').init();
 var Q = require("q");
 var bcrypt = require('bcrypt-nodejs');
 var jwt = require('jsonwebtoken');
@@ -157,8 +161,8 @@ module.exports = function () {
     };
     
     var createToken = function (data) {
-        var tokenValidity = "5m"; // Token Validity (moment js formatting)
-        var tokenIDLength = 8; // Token ID Length
+        var tokenValidity = appConfig.sessionValidity;
+        var tokenIDLength = 10; // Token ID Length
         var generateTokenID = function () {
             return _generate_random_unique_ID(tokenIDLength);
         };
@@ -173,44 +177,75 @@ module.exports = function () {
     /*
 	 * Filters unwanted User data and packs only required data to be sent
 	 */
-	var tokenizeUserData = function (user) {
+	var tokenizeUserData = function (user, isLoginToken) {
         var deferedTokenize = Q.defer();
         var userInfo = {
             email : user.email            
         };
-        user.token = createToken(userInfo);
-        user.lastLoginTime = Date.now();
-        User.update(user).then(function (updatedUserData) {
-            userInfo.token = user.token;
-            userInfo.firstname = user.firstname;
-            userInfo.lastname = user.lastname;
-            userInfo.patients = user.patients;
-            userInfo.phone = user.phone;
-            deferedTokenize.resolve(userInfo);
-        }).catch(function (err) {
-            deferedTokenize.reject(err);
-        });
+        var userInfoTokenPacket = {
+            email : user.email
+        };
+        var error, dbUserCredentials = {};
+        
+        // Create DB-User session
+        if (user.dbUser) {
+            dbUserCredentials.password = appConfig.dbUserCredentials.password;
+            dbUserCredentials.username = user.dbUser;   // Set current user for obtaining session
+            database.connect(dbUserCredentials).then(function (connection) {
+                //NR: Push dB Auth cookie to token
+                userInfoTokenPacket.cookie = (connection.sessionCookie) ? connection.sessionCookie : '';
+                user.token = createToken(userInfoTokenPacket);
+                if (isLoginToken) {
+                    //If login token , then update login time.
+                    user.lastLoginTime = Date.now();
+                }
+                User.update(user).then(function (updatedUserData) {
+                    userInfo.token = user.token;
+                    if (isLoginToken) {
+                        //If login token , only then include all login info.
+                        userInfo.firstname = user.firstname;
+                        userInfo.lastname = user.lastname;
+                        userInfo.patients = user.patients;
+                        userInfo.phone = user.phone;
+                    }                    
+                    deferedTokenize.resolve(userInfo);
+                }).catch(function (err) {
+                    deferedTokenize.reject(err);
+                });
+            }).catch(function (err) {
+                deferedTokenize.reject(err);
+            });
+        } else {
+            error = "User does not have Database Access. Please Contact Support team.";
+            logger.error(error);
+            deferedTokenize.reject(error);
+        }
+        
+
+        
         return deferedTokenize.promise;
     };
     
     var login = function (userID, password, token) {
+        //NR: Always reject with generic error , do not return specific errors [dissolves footprints]
         var deferedLogin = Q.defer();
         if (token) {
             isValidToken(token).then(function (existingUser) {
-                tokenizeUserData(existingUser).then(function (userInfo) {
+                tokenizeUserData(existingUser, true).then(function (userInfo) {
                     deferedLogin.resolve(userInfo);
                 }).catch(function (err) {
                     logger.error("login > tokenizeUserDatalogin failed : [Error] " + err);
                     deferedLogin.reject("Invalid Login");
                 });
             }).catch(function (err) {
-                deferedLogin.reject("Invalid Login : " + err);
+                logger.error("login > tokenizeUserDatalogin failed : [Error] " + err);
+                deferedLogin.reject("Invalid Login");
             });
         } else if (userID && password) {
             User.get(userID).then(function (existingUser) {
                 if (existingUser.emailVerified === true) {
                     if (isValidPassword(password, existingUser.password)) {
-                        tokenizeUserData(existingUser).then(function (userInfo) {
+                        tokenizeUserData(existingUser, true).then(function (userInfo) {
                             deferedLogin.resolve(userInfo);
                         }).catch(function (err) {
                             logger.error("login > tokenizeUserDatalogin failed : [Error] " + err);
@@ -224,6 +259,27 @@ module.exports = function () {
                 }                
             }).catch(function (err) {
                 logger.error("login > ger user data failed : [Error] " + err);
+                deferedLogin.reject("Invalid Login");
+            });
+        } else {
+            deferedLogin.reject("Invalid Login");
+        }
+        return deferedLogin.promise;
+    };
+    
+    var refreshToken = function (token) {
+        //NR: Always reject with generic error , do not return specific errors [dissolves footprints]
+        var deferedLogin = Q.defer();
+        if (token) {
+            isValidToken(token).then(function (existingUser) {
+                tokenizeUserData(existingUser).then(function (userInfo) {
+                    deferedLogin.resolve(userInfo);
+                }).catch(function (err) {
+                    logger.error("login > tokenizeUserDatalogin failed : [Error] " + err);
+                    deferedLogin.reject("Invalid Login");
+                });
+            }).catch(function (err) {
+                logger.error("login > tokenizeUserDatalogin failed : [Error] " + err);
                 deferedLogin.reject("Invalid Login");
             });
         } else {
@@ -260,14 +316,25 @@ module.exports = function () {
         if (email && isValidEmail(email) && verificationToken) {
             User.get(email).then(function (existingUser) {
                 if (existingUser.emailVerficationCode === verificationToken) {
-                    // Update verification Flags
-                    existingUser.emailVerified = true;
-                    existingUser.emailVerficationCode = "verified";
-                    User.update(existingUser).then(function () {
-                        deferedVerify.resolve();
-                    }).catch(function (error) {
+                    if (existingUser.dbUser) {
+                        SyncedStores.createDataStoreUser(existingUser.dbUser, appConfig.dbUserCredentials.password).then(function () {
+                            //NR: DB user Creatio success ? , then Update verification Flags
+                            existingUser.emailVerified = true;
+                            existingUser.emailVerficationCode = "verified";
+                            User.update(existingUser).then(function () {
+                                deferedVerify.resolve();
+                            }).catch(function (error) {
+                                deferedVerify.reject();
+                            });
+                        }).catch(function (err) {
+                            logger.error("Email Verification Failed as DB user creation Failed: [ERROR]: " + err);
+                            deferedVerify.reject();
+                        }); 
+                    } else {
+                        error = "User does not have Database Access. Please Contact Support team.";
+                        logger.error(error);
                         deferedVerify.reject();
-                    });                    
+                    }                                                           
                 } else {
                     deferedVerify.reject();
                 }
@@ -283,6 +350,7 @@ module.exports = function () {
     return {
         signup : signup,
         login : login,
+        refreshToken: refreshToken,
         logout: logout,
         verifyEmail: verifyEmail
     };

@@ -18,7 +18,8 @@ var allowCrossDomain = function (req, res, next) {
     
     // intercept OPTIONS method
     if ('OPTIONS' == req.method) {
-        res.send(200);
+        //res.send(200);  
+        next();      
     }
     else {
         next();
@@ -41,6 +42,9 @@ app.set('views', path.join(__dirname))
  * Initialize MiddleWares
  * */
 app.use(allowCrossDomain);
+
+require('./dbProxy').init(app);
+
 app.use(cookieParser()); // read cookies (needed for auth)
 app.use(bodyParser.urlencoded({
     extended: true
@@ -62,5 +66,10 @@ require('./authentication').init(app);
  * Load User Management module along with its routes
  */
 require('./userManagement').init(app);
+
+/***
+ * Load User Management module along with its routes
+ */
+
 
 module.exports = app

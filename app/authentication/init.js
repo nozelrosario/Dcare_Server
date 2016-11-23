@@ -10,7 +10,17 @@ module.exports = function (app) {
 		}).catch (function (signInError) {
 			res.json({ status: "error", error : signInError, message: "Login Failed", data: '' });
 		});
-	});
+    });
+    
+    app.get('/refresh_token', function (req, res, next) {
+        var token = req.body.token || req.query.token || req.headers['x-access-token'];
+        authentication.refreshToken(token).then(function (refreshedTokenResponse) {
+            res.cookie("Nozel_sds");
+            res.json({ status: "success", error : '', message: "Successfully Refreshed Token ", data: refreshedTokenResponse });
+        }).catch(function (signInError) {
+            res.json({ status: "error", error : signInError, message: "Token Refresh Failed", data: '' });
+        });
+    });
 
 	app.post('/signup', function (req, res, next) {
         var userData = req.body;

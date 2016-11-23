@@ -119,6 +119,8 @@ module.exports = function () {
         return deferedGet.promise;
     };
     
+    //NR: skipps creatig db is it exists
+    //NR: if not exist, create db & apply provisioning on it.
     var createDataBase = function (dBName, dbUser) {
         var deferedGet = Q.defer();
         isDataBaseCreated(dBName).then(function (dbInstance) {
@@ -131,15 +133,12 @@ module.exports = function () {
                         logger.error("Could not create " + dBName + " [Error]: " + err);
                         deferedGet.reject();
                     } else {
-                        createDatabaseUser(dbUser, dbUser).then(function () {
-                            applyDatabaseProvisioning(dBName, dbUser).then(function () {
-                                deferedGet.resolve(couchDB.use(dBName));
-                            }).catch(function (err) {
-                                deferedGet.reject();
-                            })
+                        //NR: Assuming Db user is already created. else this will result in error
+                        applyDatabaseProvisioning(dBName, dbUser).then(function () {
+                            deferedGet.resolve(couchDB.use(dBName));
                         }).catch(function (err) {
                             deferedGet.reject();
-                        });
+                        });                        
                     }
                 });
             }).catch(function (err) {
@@ -165,15 +164,21 @@ module.exports = function () {
         if (clusterGuid) {
             var availableDataEntities = appConfig.syncedDataStores;
             var unifiedInitCalls = [];
-            for (var i = 0; i < availableDataEntities.length; i++) {
-                unifiedInitCalls.push(initSyncedDataStore(availableDataEntities[i], clusterGuid, dbUser));
-            }
-            Q.all(unifiedInitCalls).then(function (results) {
-                deferedInit.resolve();
+            //NR: Ensure DbUser is created. [Create DB user with a default password.]
+            createDatabaseUser(dbUser, appConfig.dbUserCredentials.password).then(function () {
+                //NR: Post User creation proceed wth db creations & provisioning
+                for (var i = 0; i < availableDataEntities.length; i++) {
+                    unifiedInitCalls.push(initSyncedDataStore(availableDataEntities[i], clusterGuid, dbUser));
+                }
+                Q.all(unifiedInitCalls).then(function (results) {
+                    deferedInit.resolve();
+                }).catch(function (err) {
+                    logger.error("Could not Init DB's [Error]: " + err);
+                    deferedInit.reject();
+                });           
             }).catch(function (err) {
-                logger.error("Could not Init DB's [Error]: " + err);
                 deferedInit.reject();
-            });
+            });            
         } else {
             logger.error("Could not Init DB's [Error]: " + "Missing User Guid");
             deferedInit.reject();
@@ -187,17 +192,22 @@ module.exports = function () {
         var remotePatients;
         var unifiedInitCalls = [];
         User.get(userID).then(function (existingUser) {
-            remotePatients = existingUser.patients;
-            for (var j = 0; j < remotePatients.length; j++) {
-                unifiedInitCalls.push(initSyncedDataStores(remotePatients[j].guid, existingUser.dbUser));
-            }
-            Q.all(unifiedInitCalls).then(function (results) {
-                deferedInit.resolve();
-            }).catch(function (err) {
-                logger.error("Could not Init DB's for Patient "+ existingUser.guid +"[Error]: " + err);
+            if (existingUser.dbUser) {
+                remotePatients = existingUser.patients;
+                for (var j = 0; j < remotePatients.length; j++) {
+                    unifiedInitCalls.push(initSyncedDataStores(remotePatients[j].guid, existingUser.dbUser));
+                }
+                Q.all(unifiedInitCalls).then(function (results) {
+                    deferedInit.resolve();
+                }).catch(function (err) {
+                    logger.error("Could not Init DB's for Patient " + existingUser.guid + "[Error]: " + err);
+                    deferedInit.reject();
+                });
+            } else {
+                error = "User does not have Database Access. Please Contact Support team.";
+                logger.error(error);
                 deferedInit.reject();
-            });
-        
+            }
         }).catch(function (err) {
             logger.error("Could not Init DB's for User:- "+ userID +" [Error]:- " + err);
             deferedInit.reject();
@@ -207,6 +217,7 @@ module.exports = function () {
 
     return {
         initSyncedDataStores: initSyncedDataStores,
-        initSyncedDataStoresForUser: initSyncedDataStoresForUser
+        initSyncedDataStoresForUser: initSyncedDataStoresForUser,
+        createDataStoreUser : createDatabaseUser
     };
 };

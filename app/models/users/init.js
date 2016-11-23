@@ -35,18 +35,25 @@ module.exports = function () {
     var applyUsersStoreProvisioning = function () {
         var deferedApply = Q.defer();
         var DBName = dataStoreName;
-        var username = appConfig.dbAdminCredentials.username;
+        var adminUsername = appConfig.dbAdminCredentials.username;
+        var adminRole = "_admin";   //NR: Provisioned only for default Couch DB admin role.
         var security_doc = {
             members: {
                 names: [],
-                roles: [username]
+                roles: [adminRole]
             },
             admins: {
-                names: [username],
+                names: [adminUsername],
                 roles: []
             }
         };
+        
+        var security_validation_doc = {
+            language: "javascript",
+            validate_doc_update: "function(new_doc, old_doc, userCtx) { if (userCtx.name != '" + adminUsername + "' && userCtx.roles.indexOf('" + adminRole + "') == -1) { throw({forbidden: 'Not Authorized'}); } }"
+        };
         var db_security_id = "_security";
+        var db_validation_design_doc_id = "_design/_auth"
         database.connect(appConfig.dbAdminCredentials).then(function (connection) {
             var couchDB = connection.dbConnection.db;
             couchDB.use(DBName).insert(security_doc, db_security_id, function (err, body) {
@@ -55,7 +62,16 @@ module.exports = function () {
                     deferedApply.reject(err);
                 } else {
                     logger.info("Inserted security doc into " + DBName + " successfully.");
-                    deferedApply.resolve();
+                    logger.info("Attempting to insert security validation Doc in [" + DBName + "]");
+                    couchDB.use(DBName).insert(security_validation_doc, db_validation_design_doc_id, function (err, body) {
+                        if (err) {
+                            logger.error("Could not insert security validation design doc into " + DBName + " Error: " + err);
+                            deferedApply.reject(err);
+                        } else {
+                            logger.info("Inserted security validation design doc into " + DBName + " successfully.");
+                            deferedApply.resolve();
+                        }
+                    });
                 }
             });
         }).catch(function (err) {

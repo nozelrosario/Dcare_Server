@@ -21,6 +21,8 @@
     <Content Include="app\authentication\verifyEmail.hbs" />
     <Content Include="app\layout.hbs" />
     <Content Include="package.json" />
+    <Compile Include="app\dbProxy\index.js" />
+    <Compile Include="app\dbProxy\init.js" />
     <Compile Include="app\models\syncedStores\index.js" />
     <Compile Include="app\models\syncedStores\init.js" />
     <Compile Include="app\userManagement\index.js" />
@@ -43,6 +45,7 @@
   <ItemGroup>
     <Folder Include="app" />
     <Folder Include="app\authentication" />
+    <Folder Include="app\dbProxy\" />
     <Folder Include="app\logger" />
     <Folder Include="app\models" />
     <Folder Include="app\models\syncedStores\" />
