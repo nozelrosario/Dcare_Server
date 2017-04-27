@@ -1,9 +1,14 @@
 var Q = require("q");
 var logger = require('../app/logger').init();
 var appConfig = require("./application");
+var fs = require('fs')
+    , path = require('path')
+    , certFile = 'SSL/server.crt'//path.resolve('D:\Nozel\Work\Projects\SSL', 'server.crt')
+    , keyFile = 'SSL/server.key';//path.resolve('D:\Nozel\Work\Projects\SSL', 'server.key');
+    //, caFile = path.resolve('D:\Nozel\Work\Projects\SSL', 'ssl/ca.cert.pem');
 // DB Configs
 var database = function(){
-    var dbUrl = appConfig.dbHostProtocol + '://' + appConfig.dbHost + ':' + appConfig.dbPort + '/';
+    var dbUrl = appConfig.dbHostProtocol + '://' + appConfig.dbHost + ':' + appConfig.dbPort + '';
     var defaultConnectionInfo = {
         username: '',
         password: '',
@@ -12,7 +17,7 @@ var database = function(){
     };
     var connect = function (connectionConfig) {
         var deferedConnect = Q.defer();
-        var connection = {dbConnection:'', sessionInfo: '', sessionCookie: ''};
+        var connection = { dbConnection: '', sessionInfo: '', sessionCookie: '' };
         //NR: Merge Configs
         connectionConfig.username = connectionConfig.username || defaultConnectionInfo.username;
         connectionConfig.password = connectionConfig.password || defaultConnectionInfo.password;
@@ -31,6 +36,20 @@ var database = function(){
             logger.log(id);
             logger.log("-Nano-end");
         };
+        
+        if (appConfig.dbHostProtocol === "https") {
+            //connectionConfig.cert = fs.readFileSync(certFile);
+            //connectionConfig.key = fs.readFileSync(keyFile);
+            //connectionConfig.passphrase = 'password';
+            connectionConfig.requestDefaults = {
+                pool: { maxSockets: 1000 },
+                strictSSL: false
+            };
+            //connectionConfig.requestDefaults.agentOptions = {
+            //    ca: fs.readFileSync(certFile)
+            //};
+            //connectionConfig.ca = fs.readFileSync(caFile);
+        }
 
         connection.dbConnection = require('nano')(connectionConfig);
         

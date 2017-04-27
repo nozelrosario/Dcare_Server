@@ -6,6 +6,7 @@
     var secret = "supersecret";
     var Q = require("q");
     var http = require('http');
+    var https = require('https');
 
     app.all('/dbProxy*', function (request, response, next) {                        
         if (request.method !== "OPTIONS") {
@@ -17,6 +18,7 @@
                     request.headers["Cookie"] = tokenData.data.cookie;
                     delete request.headers['x-access-token'];   //NR: Delete token as Couch db will only require Auth Cookie.
                     request.headers["host"] = "localhost:8100"; //NR: Required sometimes for Cloudant
+                    request.headers["accept"] = "*/*"; //NR: match curl request format
 
                     //NR: Set CORS headers
                     response._headerNames["access-control-allow-credentials"] = "Access-control-Allow-Credentials";
@@ -33,9 +35,17 @@
                         method: request.method,
                         headers: request.headers
                     };
+                    var proxy_request;
 
-                    //NR: Initiate Proxy requrst to DB
-                    var proxy_request = http.request(options);
+                    //NR: Initiate Proxy requrst to DB (HTP Or HTTPS)
+                    if (appConfig.dbHostProtocol === "http") {
+                        proxy_request = http.request(options);
+                    } else if (appConfig.dbHostProtocol === "https") {
+                        //NR: Might be needed when we use actual CA signed certificate.
+                        //options.agent = new https.Agent({ host: appConfig.dbHost, port: appConfig.dbPort, ca: ca });
+                        //options.ca = [fs.readFileSync("./ca.crt")];                       
+                        proxy_request = https.request(options);
+                    }                    
                     
                     proxy_request.on('error', function (e) {
                         unknownError(response, e);
