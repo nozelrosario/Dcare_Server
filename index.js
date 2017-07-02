@@ -21,7 +21,7 @@ app.listen(appPort, function (err) {
     }    
     console.log("D-Care Server is listening on Port:" + appPort);
 });
-
+console.log(process.env);
 // DB Initialization
 if (!cmdLineArgs.nodb.value) {
     PouchDB = require('pouchdb');
