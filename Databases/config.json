@@ -4,5 +4,9 @@
   },
   "admins": {
     "admin": "-pbkdf2-ac41d89ddbe8d6504b975abcc2339dda85c42e1e,1d81111841f01851d613c1b218912614f1b010519b1b819b,10"
+  },
+  "log": {
+    "level": "debug",
+    "file": "./Databases/log.txt"
   }
 }
