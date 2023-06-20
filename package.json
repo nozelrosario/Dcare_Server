@@ -13,7 +13,7 @@
     "jsonwebtoken": "^7.1.9",
     "nano": "^6.2.0",
     "passport": "latest",
-    "pouchdb": "^6.2.0",
+    "pouchdb": "^7.1.0",
     "q": "^1.4.1",
     "request": "^2.78.0",
     "scribe-js": "^2.0.4"
